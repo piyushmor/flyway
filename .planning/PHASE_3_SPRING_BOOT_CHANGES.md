@@ -36,7 +36,8 @@ spring-boot/spring-boot-project/spring-boot-starters/spring-boot-starter-flyway/
 
 **File**: `src/main/java/org/springframework/boot/autoconfigure/flyway/FlywayAutoConfiguration.java`
 
-**Action**: REVIEW ONLY - Do NOT modify
+**Action**: REVIEW ONLY - Do NOT modify (Constraint 4: Backward Compatibility)
+
 ```java
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnClass(Flyway.class)
@@ -44,14 +45,26 @@ spring-boot/spring-boot-project/spring-boot-starters/spring-boot-starter-flyway/
 @EnableConfigurationProperties(FlywayProperties.class)
 public class FlywayAutoConfiguration {
     // Existing JDBC logic - LEAVE UNTOUCHED
+    // NO CHANGES to this class!
 }
 ```
 
-**Why**: Maintains 100% backward compatibility
+**Why**: Maintains 100% backward compatibility (Constraint 4)
+
+**Validation Gate**:
+- [ ] This class is not modified at all
+- [ ] All existing JDBC tests pass unchanged
+- [ ] No conditional logic added to JDBC bean creation
+- [ ] Performance of JDBC path is not affected
 
 #### Task 3.2: Create New R2DBC Auto-Configuration
 
 **File**: `src/main/java/org/springframework/boot/autoconfigure/flyway/FlywayR2dbcAutoConfiguration.java` (NEW)
+
+**Design Principle** (Constraints 1 & 4):
+- Only activates if JDBC Flyway bean not already created (Constraint 1: JDBC preference)
+- Uses `@ConditionalOnMissingBean(Flyway.class)` to prevent double creation (Constraint 4: backward compat)
+- Runs BEFORE R2dbcRepositoriesAutoConfiguration (ensures migrations run first)
 
 ```java
 @Configuration(proxyBeanMethods = false)
@@ -134,6 +147,11 @@ public class FlywayR2dbcAutoConfiguration {
 
 **File**: `src/main/java/org/springframework/boot/autoconfigure/flyway/FlywayProperties.java`
 
+**Design Principle** (Constraint 1: Connection Type Selection):
+- Add explicit `connectionType` property (overrides auto-detection)
+- Add R2DBC-specific configuration (blockingTimeout)
+- All additions are additive (no changes to existing properties - Constraint 4)
+
 **Add these fields**:
 ```java
 @ConfigurationProperties(prefix = "spring.flyway")
@@ -200,44 +218,53 @@ spring.flyway.r2dbc.enabled=false
 
 **File**: `src/main/java/org/springframework/boot/autoconfigure/flyway/R2dbcConnectionDetector.java` (NEW)
 
+**Design Principle** (Constraint 1: Connection Type Precedence):
+- Implements strict precedence: Explicit property → JDBC default → auto-detection
+- JDBC always wins when both available (backward compatibility - Constraint 4)
+- Clear error messages if neither available
+
 ```java
 public class R2dbcConnectionDetector {
 
     /**
      * Determine if R2DBC should be used based on configuration and available beans.
+     *
+     * Constraint 1 (JDBC Default): JDBC is preferred when both available
+     * Constraint 1 (Explicit Override): Explicit property takes precedence
      */
     public static boolean shouldUseR2dbc(
             FlywayProperties properties,
             boolean hasDataSource,
             boolean hasConnectionFactory) {
 
-        // 1. Explicit property takes precedence
+        // 1. Explicit property takes HIGHEST precedence
         String connectionType = properties.getConnectionType();
         if ("jdbc".equalsIgnoreCase(connectionType)) {
-            return false;
+            return false;  // Force JDBC (even if R2DBC available)
         }
         if ("r2dbc".equalsIgnoreCase(connectionType)) {
-            return true;
+            return true;   // Force R2DBC (even if JDBC available)
         }
 
-        // 2. If both available, JDBC wins (backward compatible)
+        // 2. If both available, JDBC wins (Constraint 1: JDBC Default, Constraint 4: Backward Compat)
         if (hasDataSource && hasConnectionFactory) {
-            return false;
+            return false;  // Use JDBC for backward compatibility
         }
 
-        // 3. Use whichever is available
-        if (hasConnectionFactory) {
-            return true;
+        // 3. Use whichever is available (auto-detection)
+        if (hasConnectionFactory && !hasDataSource) {
+            return true;   // Only R2DBC available, use it
         }
 
-        if (hasDataSource) {
-            return false;
+        if (hasDataSource && !hasConnectionFactory) {
+            return false;  // Only JDBC available, use it
         }
 
-        // 4. Neither available
+        // 4. Neither available - fail fast with clear error
         throw new IllegalStateException(
             "Neither spring.datasource nor spring.r2dbc is configured. " +
-            "At least one must be configured for Flyway to work.");
+            "At least one must be configured for Flyway to work. " +
+            "Configure one via spring.datasource.* or spring.r2dbc.* properties.");
     }
 }
 ```
@@ -442,17 +469,68 @@ From Flyway repo (Phase 2 - will be available):
 
 ---
 
+## Constraint Validation Checklist for Phase 3
+
+Before approving Phase 3 implementation, verify all constraints are maintained:
+
+### Constraint 1: JDBC & R2DBC Treated Equally (with JDBC Default)
+- [ ] FlywayAutoConfiguration (JDBC) is NOT modified
+- [ ] FlywayR2dbcAutoConfiguration (R2DBC) only activates if JDBC not present
+- [ ] Bean initialization order ensures JDBC bean is created first (if DataSource present)
+- [ ] Connection type detection properly prioritizes JDBC (when both available)
+- [ ] Explicit `connection-type` property can override auto-detection
+- [ ] Both paths use identical schema history table structure
+- [ ] Tests verify JDBC-first behavior in all scenarios
+
+### Constraint 2: R2DBC Database-Agnostic Design
+- [ ] FlywayR2dbcAutoConfiguration has NO database-specific code
+- [ ] R2dbcConnectionDetector is purely generic logic
+- [ ] No PostgreSQL/MySQL drivers in spring-boot-starter-flyway
+- [ ] Database adapters are separate modules (in Flyway repo, not Spring Boot repo)
+
+### Constraint 3: Seamless JDBC↔R2DBC Switching
+- [ ] Connection type detection from classpath works
+- [ ] FlywayProperties schema history location identical for both
+- [ ] Configuration examples show switching scenarios
+- [ ] Tests verify same SQL migrations work on both paths
+
+### Constraint 4: Full Backward Compatibility (CRITICAL)
+- [ ] FlywayAutoConfiguration NOT modified (zero changes to JDBC path)
+- [ ] No new required parameters (all additive)
+- [ ] All existing properties still work
+- [ ] Existing Spring Boot tests pass unchanged
+- [ ] Zero performance impact on JDBC path
+- [ ] Deployment: users can update Spring Boot without any Flyway configuration changes
+
+---
+
 ## Notes for Phase 3 Implementation
 
 **Key Principle**: All changes must be additive and backward compatible
 
-**JDBC Changes**: ZERO modifications to existing JDBC auto-configuration
+**JDBC Changes**: ZERO modifications to existing JDBC auto-configuration (Constraint 4)
 
-**R2DBC Changes**: Only new auto-configuration class + property updates
+**R2DBC Changes**: Only new auto-configuration class + additive property updates (Constraints 1, 2, 3)
 
-**Default Behavior**: JDBC is preferred when both configured (maintains backward compatibility)
+**Default Behavior**: JDBC is preferred when both configured (Constraints 1, 4 - maintains backward compatibility)
 
-**User Impact**: Existing users see no changes; new users can opt-in to R2DBC
+**User Impact**:
+- Existing users see no changes (Constraint 4)
+- New users can opt-in to R2DBC (Constraint 1)
+- Users can switch JDBC↔R2DBC without re-running migrations (Constraint 3)
+
+---
+
+## Implementation Order (Respecting Constraints)
+
+1. **Review** (Constraint 4): Examine existing FlywayAutoConfiguration - ensure no changes
+2. **Create** (Constraints 1, 2, 3): Implement FlywayR2dbcAutoConfiguration with proper conditions
+3. **Update** (Constraint 1): Add connectionType and r2dbc properties (additive)
+4. **Implement** (Constraint 1, 3): R2dbcConnectionDetector with strict precedence
+5. **Update** (Constraint 4): pom.xml dependencies (make R2DBC optional)
+6. **Register** (Constraint 1): Auto-configuration in .imports file (after JDBC config)
+7. **Test** (All constraints): Comprehensive tests covering all scenarios
+8. **Validate** (All constraints): Verify checklist above before submission
 
 ---
 

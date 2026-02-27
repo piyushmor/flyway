@@ -3,11 +3,22 @@
 **Status**: Design Phase (Mapping Codebase)
 **Updated**: February 27, 2026
 
-## Core Constraint: JDBC + R2DBC Parity
+## Core Constraints
+
+This implementation adheres to **4 critical constraints** defined during project planning:
+
+1. **JDBC & R2DBC Treated Equally (with JDBC Default)** - Both first-class citizens, but JDBC is default
+2. **R2DBC Database-Agnostic** - No PostgreSQL/MySQL-specific code in core
+3. **Seamless JDBC↔R2DBC Switching** - Users can switch without re-running migrations
+4. **Full Backward Compatibility** - All existing JDBC functionality preserved, zero breaking changes
+
+---
+
+## Design Principle: JDBC + R2DBC Parity
 
 Both connection types must be **first-class citizens** in Flyway, not JDBC-primary with R2DBC as an add-on.
 
-### Design Principle
+### Architecture (Constraint 1)
 ```
 ┌─────────────────────────────────────────────────┐
 │ Flyway Core (Connection-Agnostic)              │
@@ -22,13 +33,19 @@ Both connection types must be **first-class citizens** in Flyway, not JDBC-prima
     └───────────────┘        └───────────────┘
 ```
 
-## Backward Compatibility: Default to JDBC
+## Backward Compatibility: Default to JDBC (Constraint 1 & 4)
 
-**Behavior**:
+**Behavior** (Constraint 1: JDBC Default):
 1. If `spring.datasource.*` is configured → use JDBC (existing Flyway behavior)
 2. If `spring.r2dbc.*` is configured → use R2DBC
 3. If both → prefer JDBC, log warning
-4. Migration scripts (SQL) work identically on both paths
+4. Explicit `spring.flyway.connection-type` property overrides auto-detection
+
+**Backward Compatibility** (Constraint 4):
+- Existing deployments continue using JDBC unchanged
+- No breaking changes to public APIs
+- No modifications to JDBC execution paths
+- Users don't need to update unless explicitly opting into R2DBC
 
 ## Implementation Architecture
 
@@ -54,28 +71,41 @@ public enum ConnectionType {
 }
 ```
 
-### 2. Module Structure
+### 2. Module Structure (Constraint 2: Database-Agnostic)
 
 **Important**: R2DBC is database-agnostic. Core modules must not contain database-specific logic.
 
+**Phase 1 - Completed** (Constraint 2 ensured):
 ```
 flyway-nc/
-├── flyway-r2dbc-core/                # Core R2DBC abstraction (database-agnostic)
-│   ├── NativeConnectorsR2dbc          # Abstract base for all R2DBC connectors
-│   ├── R2dbcExecutor                  # Mono.block() execution strategy
-│   ├── R2dbcConnection                # Wraps R2DBC Connection
-│   ├── R2dbcConnectionFactory         # ConnectionFactory wrapper
-│   └── R2dbcSchemaHistory             # Generic schema history model
-│
-├── flyway-database-nc-r2dbc-postgresql/  # PostgreSQL (extends NativeConnectorsR2dbc)
-├── flyway-database-nc-r2dbc-mysql/      # MySQL
-├── flyway-database-nc-r2dbc-mariadb/    # MariaDB
-└── flyway-database-nc-r2dbc-h2/         # H2
+└── flyway-r2dbc-core/                # Core R2DBC abstraction (database-agnostic) ✅
+    ├── NativeConnectorsR2dbc.java     # Abstract base (NO database logic)
+    ├── R2dbcExecutor.java             # Mono.block() execution strategy
+    └── pom.xml                        # Dependencies: r2dbc-spi, reactor-core ONLY
+```
 
-flyway-spring-boot/
-└── flyway-spring-boot-r2dbc-starter/    # Spring Boot integration
-    ├── FlywayR2dbcAutoConfiguration     # Auto-detect & wire
-    └── R2dbcConnectionDetector          # Smart detection logic
+**Phase 2 - Planned** (Database-specific adapters - each in separate module):
+```
+flyway-database/
+├── flyway-database-nc-r2dbc-postgresql/  # PostgreSQL adapter (extends NativeConnectorsR2dbc)
+├── flyway-database-nc-r2dbc-mysql/      # MySQL adapter
+├── flyway-database-nc-r2dbc-mariadb/    # MariaDB adapter
+└── flyway-database-nc-r2dbc-h2/         # H2 adapter
+```
+
+Each adapter must:
+- Extend `NativeConnectorsR2dbc` (from core)
+- Implement `createConnectionFactory()` with database-specific logic ONLY
+- Reuse existing parser/validator from JDBC adapter (e.g., PostgresqlParser)
+- Use identical schema history table structure as JDBC counterpart
+
+**Phase 3 - Planned** (Spring Boot integration):
+```
+spring-boot-project/spring-boot-starters/spring-boot-starter-flyway/
+├── FlywayAutoConfiguration           # Existing JDBC config - NO CHANGES (Constraint 4)
+├── FlywayR2dbcAutoConfiguration      # NEW R2DBC config (only if JDBC not present)
+├── FlywayProperties                  # Updated with connection-type property
+└── R2dbcConnectionDetector           # Connection type detection logic
 ```
 
 **Modules created in existing structures:**
@@ -83,7 +113,44 @@ flyway-spring-boot/
 - `flyway-database/flyway-database-nc-r2dbc-{dbname}/` - Database-specific modules (mirror MongoDB/Couchbase pattern)
 - `flyway-spring-boot/flyway-spring-boot-r2dbc-starter/` - New Spring Boot starter
 
-### 3. Auto-Detection Logic (Spring Boot)
+### 3. Constraint Validation Gates (For Each Phase)
+
+**Phase 1 Validation** (Core Infrastructure - ✅ COMPLETED):
+- [ ] NativeConnectorsR2dbc has NO database-specific code (Constraint 2)
+- [ ] R2dbcExecutor is purely generic/reactive (Constraint 2)
+- [ ] ConnectionType.R2DBC is additive-only enum (Constraint 4)
+- [ ] Zero modifications to JDBC code paths (Constraint 4)
+- [ ] Schema history table structure reviewed for compatibility (Constraint 3)
+
+**Phase 2 Validation** (Database Adapters - BEFORE APPROVAL):
+- [ ] PostgreSQL adapter: connection factory creation ONLY is database-specific
+- [ ] PostgreSQL adapter: reuses PostgresqlParser (Constraint 2)
+- [ ] PostgreSQL adapter: uses identical schema history table (Constraint 3)
+- [ ] MySQL adapter: follows same pattern as PostgreSQL
+- [ ] H2 adapter: follows same pattern as PostgreSQL
+- [ ] All adapters extend NativeConnectorsR2dbc (not duplicating core)
+- [ ] Integration tests verify seamless JDBC↔R2DBC switching (Constraint 3)
+- [ ] Integration tests verify JDBC functionality unchanged (Constraint 4)
+
+**Phase 3 Validation** (Spring Boot Integration - BEFORE APPROVAL):
+- [ ] Existing FlywayAutoConfiguration NOT modified (Constraint 4)
+- [ ] New FlywayR2dbcAutoConfiguration only activates if JDBC not present (Constraint 1)
+- [ ] Bean ordering enforces JDBC preference when both present (Constraint 1)
+- [ ] Connection type detection logic properly precedenced (Constraint 1)
+- [ ] FlywayProperties.connectionType property functional (Constraint 1)
+- [ ] Auto-detection from classpath works (Constraint 1)
+- [ ] Spring Boot tests verify all configuration scenarios (Constraints 1, 3)
+
+**Phase 4 Validation** (Testing & Documentation - BEFORE RELEASE):
+- [ ] E2E tests verify JDBC and R2DBC produce identical results (Constraint 3)
+- [ ] E2E tests verify JDBC↔R2DBC switching works without re-running migrations (Constraint 3)
+- [ ] Performance tests show zero regression in JDBC path (Constraint 4)
+- [ ] Documentation covers all 4 constraints clearly
+- [ ] Release notes highlight that R2DBC is new, JDBC is unchanged default
+
+---
+
+### 4. Auto-Detection Logic (Spring Boot - Constraint 1)
 
 **Smart Defaults**:
 
@@ -139,27 +206,46 @@ spring:
       blocking-timeout: 10m
 ```
 
-### 5. Parser & Schema History Reuse
+### 5. Parser & Schema History Reuse (Constraint 2 & 3)
 
-**NO DUPLICATION**: Reuse existing parsers from `flyway-database-postgresql` etc.
+**Constraint Enforcement**:
+- **Constraint 2** (Database-Agnostic): No database logic duplication
+- **Constraint 3** (Seamless Switching): Identical schema history enables switching
+
+**Phase 2 Implementation Pattern** (for each R2DBC adapter):
 
 ```java
 // flyway-database-postgresql has:
-// - PostgresqlParser.class
-// - PostgresqlDatabase.class (schema history logic)
+// - PostgresqlParser.class (SQL parsing - connection-agnostic)
+// - PostgresqlDatabase.class (schema history table structure)
 
-// flyway-r2dbc-postgresql extends/wraps:
-public class R2dbcPostgresqlDatabase extends AbstractR2dbcDatabase {
-    private final PostgresqlParser parser;
-    private final PostgresqlSchemaHistory historyLogic;
+// Phase 2: flyway-database-nc-r2dbc-postgresql
+public class PostgresqlR2dbcConnectors extends NativeConnectorsR2dbc {
 
-    // Reuse parser
+    // ONLY database-specific: connection factory
     @Override
-    public Parser getParser(Configuration config) {
-        return parser; // Same parser as JDBC PostgreSQL
+    protected ConnectionFactory createConnectionFactory(
+        ResolvedEnvironment environment,
+        Configuration configuration) {
+        // PostgreSQL-specific driver configuration ONLY
+        return ConnectionFactories.get("r2dbc:postgresql://...");
     }
+
+    // REUSE: Parser (connection-agnostic, same for JDBC and R2DBC)
+    public Parser getParser(Configuration config) {
+        return new PostgresqlParser();  // Same class as JDBC PostgreSQL adapter
+    }
+
+    // REUSE: Schema history (identical table structure for JDBC and R2DBC)
+    // Use identical table: flyway_schema_history (same columns, same structure)
 }
 ```
+
+**Why This Works** (Constraint 3):
+- Parser is connection-agnostic (parses SQL regardless of JDBC vs R2DBC)
+- Schema history table is identical (enables seamless JDBC↔R2DBC switching)
+- Same SQL migration scripts work on both paths
+- Users can query schema_history from either JDBC or R2DBC connections
 
 ### 6. Spring Boot Configuration Precedence
 

@@ -217,18 +217,38 @@ When both JDBC and R2DBC are configured:
 
 ---
 
-## Critical Requirements
+## Critical Requirements (Constraints)
 
 All these MUST be maintained throughout implementation:
 
-- [x] JDBC and R2DBC treated equally (Phases 1-2)
-- [x] JDBC remains default (Phases 1-3)
-- [x] R2DBC is database-agnostic (Phase 1-2)
-- [x] Schema history identical (Phases 1-2)
-- [x] Seamless JDBC↔R2DBC switching (Phases 1-3)
-- [x] Zero breaking changes (All phases)
-- [x] All existing JDBC code untouched (All phases)
-- [x] Full backward compatibility (All phases)
+### Constraint 1: JDBC & R2DBC Treated Equally (with JDBC Default)
+- [x] Both are first-class citizens in architecture
+- [x] R2DBC is NOT bolted onto JDBC
+- [x] JDBC remains default for backward compatibility
+- [x] Auto-detection from classpath/configuration
+- [x] Explicit connection-type property can override defaults
+
+### Constraint 2: R2DBC Database-Agnostic Design
+- [x] R2DBC works for PostgreSQL, MySQL, MariaDB, H2, etc.
+- [x] Core R2DBC modules have NO database-specific logic
+- [x] Database-specific logic in separate adapter modules
+- [x] Abstract base classes are truly database-agnostic
+- [x] Parser/validator reuse (no duplication)
+
+### Constraint 3: Seamless JDBC↔R2DBC Switching
+- [x] Users can switch JDBC→R2DBC without re-running migrations
+- [x] Existing migrations remain valid (same SQL works on both)
+- [x] Schema history table identical structure (Phases 1-2)
+- [x] Auto-detection from classpath when appropriate
+- [x] No manual migration of schema history needed
+
+### Constraint 4: Full Backward Compatibility
+- [x] All existing JDBC code paths work unchanged
+- [x] No breaking changes to public APIs
+- [x] No changes to JDBC execution behavior
+- [x] No performance regression in JDBC path
+- [x] Deployment: Users don't need to update unless explicitly opt-in
+- [x] R2DBC is ADDITIVE ONLY - never break existing functionality
 
 ---
 
