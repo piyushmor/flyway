@@ -219,14 +219,29 @@ spring:
 - [ ] `flyway-r2dbc-h2` (for testing)
 - [ ] Integration tests per database
 
-### Phase 3: Spring Boot Auto-Configuration
-- [ ] `flyway-spring-boot-r2dbc-starter` module
-  - FlywayR2dbcAutoConfiguration
-  - R2dbcConnectionDetector (smart defaults)
-  - @ConditionalOnXXX annotations
-  - Configuration properties validation
-- [ ] Proper bean ordering (before R2dbcRepositoriesAutoConfiguration)
-- [ ] Documentation
+### Phase 3: Spring Boot Auto-Configuration (in Spring Boot repo)
+**NOTE**: Changes required in https://github.com/spring-projects/spring-boot
+
+This Flyway repo provides:
+- `NativeConnectorsR2dbc` abstract base (already in Phase 1)
+- `ConnectionType.R2DBC` enum (already in Phase 1)
+- R2DBC database adapters (Phase 2)
+- Integration via existing Plugin interface (already available)
+
+Spring Boot repo must add:
+- [ ] New `FlywayR2dbcAutoConfiguration` class
+- [ ] Update `FlywayProperties` with connection-type and r2dbc config
+- [ ] Update `spring-boot-starter-flyway` dependencies
+- [ ] Implement `R2dbcConnectionDetector` for smart defaults
+- [ ] Ensure proper bean ordering (@AutoConfigureBefore)
+- [ ] Configuration properties validation
+- [ ] Tests for JDBC/R2DBC precedence
+
+**Backward Compatibility**:
+- Keep existing `FlywayAutoConfiguration` UNCHANGED
+- JDBC config has higher priority (runs first)
+- R2DBC only activates if JDBC not present
+- Explicit `connection-type` property overrides auto-detection
 
 ### Phase 4: Testing & Documentation
 - [ ] E2E Spring Boot tests (Testcontainers)
