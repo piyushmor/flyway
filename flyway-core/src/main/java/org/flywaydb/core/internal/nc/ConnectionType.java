@@ -22,5 +22,6 @@ package org.flywaydb.core.internal.nc;
 public enum ConnectionType {
     JDBC,
     EXECUTABLE,
-    API
+    API,
+    R2DBC
 }

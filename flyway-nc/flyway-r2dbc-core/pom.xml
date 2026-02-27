@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.flywaydb</groupId>
+    <artifactId>flyway-parent</artifactId>
+    <version>12.0.2</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>flyway-r2dbc-core</artifactId>
+  <name>${project.artifactId}</name>
+  <description>Flyway R2DBC core abstraction - database-agnostic R2DBC connector foundation</description>
+
+  <properties>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <dependencies>
+    <!-- Flyway core dependencies -->
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>flyway-core</artifactId>
+      <version>${project.parent.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>flyway-nc-core</artifactId>
+      <version>${project.parent.version}</version>
+    </dependency>
+
+    <!-- R2DBC core API -->
+    <dependency>
+      <groupId>io.r2dbc</groupId>
+      <artifactId>r2dbc-spi</artifactId>
+      <version>1.0.0.RELEASE</version>
+    </dependency>
+
+    <!-- Project Reactor for reactive support -->
+    <dependency>
+      <groupId>io.projectreactor</groupId>
+      <artifactId>reactor-core</artifactId>
+      <version>3.5.10</version>
+    </dependency>
+
+    <!-- Lombok for code generation -->
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+    </dependency>
+  </dependencies>
+
+</project>

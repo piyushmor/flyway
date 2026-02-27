@@ -17,6 +17,7 @@
     <module>flyway-nc-callbacks</module>
     <module>flyway-nc-scanners</module>
     <module>flyway-nc-core</module>
+    <module>flyway-r2dbc-core</module>
     <module>flyway-experimental-sqlite</module>
     <module>flyway-verb-baseline</module>
     <module>flyway-verb-clean</module>
